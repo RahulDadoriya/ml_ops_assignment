@@ -40,7 +40,7 @@ class HeartDiseaseTrainer:
         mlflow.set_experiment(self.experiment_name)
 
         # 4. Enforce structural pickling globally to stop skops verification errors
-        mlflow.sklearn.autolog(serialization_format="pickle", log_models=True)
+        mlflow.sklearn.autolog(serialization_format="pickle", log_models=False)
 
     def process_and_split_data(self, df_clean, target_column="target"):
         """
@@ -93,52 +93,108 @@ class HeartDiseaseTrainer:
 
             print("EDA figures successfully archived.")
 
+
     def run_training_pipeline(self, X_train, X_test, y_train, y_test):
         """
-        Iterates over the defined model architectures using robust Pipeline configurations.
-        Returns a dictionary mapping the Model Names to their unique, production-ready Run IDs.
+        Train candidate models, track their metrics, and register the
+        best-performing model as HeartDiseaseModel with the champion alias.
         """
-        # Construct production-grade architecture blueprints using Pipeline encapsulation
         models = [
             (
                 "Logistic Regression",
                 Pipeline([
-                    ('imputer', SimpleImputer(strategy='median')),
-                    ('classifier', LogisticRegression(max_iter=1000, random_state=42))
-                ])
+                    ("imputer", SimpleImputer(strategy="median")),
+                    (
+                        "classifier",
+                        LogisticRegression(max_iter=1000, random_state=42),
+                    ),
+                ]),
             ),
             (
                 "Random Forest",
                 Pipeline([
-                    ('imputer', SimpleImputer(strategy='median')),
-                    ('classifier', RandomForestClassifier(n_estimators=100, random_state=42))
-                ])
+                    ("imputer", SimpleImputer(strategy="median")),
+                    (
+                        "classifier",
+                        RandomForestClassifier(
+                            n_estimators=100,
+                            random_state=42,
+                        ),
+                    ),
+                ]),
             ),
         ]
 
         run_registry = {}
+        best_run_id = None
+        best_accuracy = -1.0
 
         for model_name, pipeline in models:
-            # Open a cleanly tracked parent structural run context locally
             with mlflow.start_run(run_name=model_name) as run:
-                print(f"Executing training loop for architecture: {model_name}")
+                print(f"Training model: {model_name}")
 
-                # Fit the operational model architecture pipeline seamlessly
                 pipeline.fit(X_train, y_train)
 
-                # Evaluate model validation metrics
                 y_pred = pipeline.predict(X_test)
-                report = classification_report(y_test, y_pred, output_dict=True)
+                report = classification_report(
+                    y_test,
+                    y_pred,
+                    output_dict=True,
+                    zero_division=0,
+                )
 
-                # Sync specific operational parameter and tracking targets
+                accuracy = report["accuracy"]
+
                 mlflow.log_param("model_name", model_name)
-                mlflow.log_metric("accuracy", report["accuracy"])
-                mlflow.log_metric("recall_class_1", report["1"]["recall"])
-                mlflow.log_metric("recall_class_0", report["0"]["recall"])
-                mlflow.log_metric("f1_score_macro", report["macro avg"]["f1-score"])
+                mlflow.log_metric("accuracy", accuracy)
+                mlflow.log_metric(
+                    "f1_score_macro",
+                    report["macro avg"]["f1-score"],
+                )
 
-                # Register the successful run mapping id to memory
+                # Log the fitted model at the expected "model" artifact path.
+                # This makes it available through runs:/<run_id>/model.
+                mlflow.sklearn.log_model(
+                    pipeline,
+                    artifact_path="model",
+                    serialization_format="pickle",
+                )
+
                 run_registry[model_name] = run.info.run_id
-                print(f"Logged {model_name} with Tracking Run ID: {run.info.run_id}")
+
+                print(f"Model: {model_name}")
+                print(f"Validation accuracy: {accuracy:.4f}")
+                print(f"Run ID: {run.info.run_id}")
+
+                if accuracy > best_accuracy:
+                    best_accuracy = accuracy
+                    best_run_id = run.info.run_id
+
+        if best_run_id is None:
+            raise RuntimeError("Training did not produce a valid model run.")
+
+        # Register the best model in the MLflow Model Registry.
+        model_name = "HeartDiseaseModel"
+        model_uri = f"runs:/{best_run_id}/model"
+
+        print(f"Registering best model from run: {best_run_id}")
+
+        registered_version = mlflow.register_model(
+            model_uri=model_uri,
+            name=model_name,
+        )
+
+        # Assign the alias expected by the FastAPI controller.
+        client = mlflow.tracking.MlflowClient()
+
+        client.set_registered_model_alias(
+            name=model_name,
+            alias="champion",
+            version=registered_version.version,
+        )
+
+        print(f"Registered model: {model_name}")
+        print(f"Model version: {registered_version.version}")
+        print("Model alias assigned: champion")
 
         return run_registry
