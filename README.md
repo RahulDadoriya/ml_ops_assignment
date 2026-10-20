@@ -22,6 +22,17 @@ The application is deployed on Kubernetes using Minikube for local development a
 - **API Documentation:** Test prediction endpoints using automatically generated Swagger UI.
 - **Model Version Metadata:** Return the registered model name, alias, version, and originating MLflow run ID in prediction responses.
 
+### Run project
+- **Clone the project locally**
+- **Navigate to root directory of project**
+- **Run cmd: ```sudo chmod +x run_script.sh```**
+- **Execute the script using cmd: ```./run_script.sh```**
+- **If you see error for port-forwarding then run below 2 cmd:**
+  - ***```kubectl port-forward --address 127.0.0.1 service/heart-disease-api-service 8000:8000```***
+  - ***```kubectl port-forward --address 127.0.0.1 service/mlflow-tracking 5000:5000```***
+- **Finaly you can access mlflow-ui & fast-api at below url:**
+  - ***ML flow ui: ```http://127.0.0.1:5000```***
+  - ***Fast api: ```http://127.0.0.1:8000/docs```***
 ## 2. System Architecture
 
 ```text
