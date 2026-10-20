@@ -134,6 +134,12 @@ spec:
           volumeMounts:
             - name: mlflow-artifacts
               mountPath: /mlartifacts
+          startupProbe:
+            tcpSocket:
+              port: 5000
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 30
           readinessProbe:
             tcpSocket:
               port: 5000
@@ -144,6 +150,7 @@ spec:
               port: 5000
             initialDelaySeconds: 30
             periodSeconds: 10
+
       volumes:
         - name: mlflow-artifacts
           persistentVolumeClaim:

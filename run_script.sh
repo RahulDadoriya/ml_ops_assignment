@@ -341,6 +341,7 @@ start_port_forward() {
         PF_API_PID="$pid"
     fi
 
+
     local attempt=0
 
     while (( attempt < 30 )); do
@@ -349,9 +350,20 @@ start_port_forward() {
             die "Port-forward for $description exited unexpectedly."
         fi
 
-        if curl -fsS --max-time 2 "http://127.0.0.1:$local_port/" >/dev/null 2>&1; then
-            success "$description port-forward is active."
-            return 0
+        if [[ "$description" == "api" ]]; then
+            if curl -fsS --max-time 2 \
+                "http://127.0.0.1:$local_port/openapi.json" \
+                >/dev/null 2>&1; then
+                success "$description port-forward is active."
+                return 0
+            fi
+        else
+            if curl -fsS --max-time 2 \
+                "http://127.0.0.1:$local_port/" \
+                >/dev/null 2>&1; then
+                success "$description port-forward is active."
+                return 0
+            fi
         fi
 
         sleep 1
