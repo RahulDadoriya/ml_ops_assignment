@@ -1,0 +1,28 @@
+
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: heart-disease-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: heart-disease-api
+  template:
+    metadata:
+      labels:
+        app: heart-disease-api
+    spec:
+      containers:
+        - name: heart-disease-api
+          image: heart-disease-api:v3
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8000
+          env:
+            - name: MLFLOW_TRACKING_URI
+              value: "http://mlflow-tracking:5000"
+            - name: PRODUCTION_RUN_ID
+              value: "596a605858ad4d2d96b21f62a0b56f92"
+

@@ -1,0 +1,162 @@
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mlflow-db-secret
+type: Opaque
+stringData:
+  POSTGRES_PASSWORD: "mlflowdevpass"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: mlflow
+            - name: POSTGRES_USER
+              value: mlflow
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mlflow-db-secret
+                  key: POSTGRES_PASSWORD
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - pg_isready -U mlflow -d mlflow
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: postgres-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mlflow-artifacts-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlflow-tracking
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mlflow-tracking
+  template:
+    metadata:
+      labels:
+        app: mlflow-tracking
+    spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - until nc -z postgres 5432; do echo "Waiting for PostgreSQL"; sleep 2; done
+      containers:
+        - name: mlflow-tracking
+          image: heart-disease-mlflow:v1
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 5000
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mlflow-db-secret
+                  key: POSTGRES_PASSWORD
+          command:
+            - /bin/sh
+            - -c
+          args:
+            - |
+              mlflow server \
+                --backend-store-uri "postgresql+psycopg2://mlflow:${POSTGRES_PASSWORD}@postgres:5432/mlflow" \
+                --artifacts-destination /mlartifacts \
+                --host 0.0.0.0 \
+                --port 5000 \
+                --allowed-hosts "mlflow-tracking,mlflow-tracking:5000,mlflow-tracking.default.svc.cluster.local,mlflow-tracking.default.svc.cluster.local:5000,localhost,localhost:5000,127.0.0.1,127.0.0.1:5000"
+          volumeMounts:
+            - name: mlflow-artifacts
+              mountPath: /mlartifacts
+          readinessProbe:
+            tcpSocket:
+              port: 5000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: 5000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+      volumes:
+        - name: mlflow-artifacts
+          persistentVolumeClaim:
+            claimName: mlflow-artifacts-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mlflow-tracking
+spec:
+  type: ClusterIP
+  selector:
+    app: mlflow-tracking
+  ports:
+    - port: 5000
+      targetPort: 5000
