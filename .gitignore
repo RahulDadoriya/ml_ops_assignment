@@ -1,3 +1,28 @@
+# Local MLflow data
+mlruns/
+mlflow.db
+mlflow.db-journal
+mlflow.db-shm
+mlflow.db-wal
+
+# Backups and local artifacts
+backups/
+artifacts/
+
+# Python environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Local environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
